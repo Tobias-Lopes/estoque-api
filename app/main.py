@@ -94,3 +94,21 @@ def detalhar_produto(
     db: Session = Depends(get_db)
 ):
     return obter_produto(db, produto_id)
+
+@app.patch(
+    "/produtos/{produto_id}/margem",
+    response_model=schemas.ProdutoOut
+)
+def atualizar_margem(
+    produto_id: int,
+    dados: schemas.MargemUpdate,
+    db: Session = Depends(get_db)
+):
+    produto = obter_produto(db, produto_id)
+
+    produto.margem_percentual = dados.margem_percentual
+
+    db.commit()
+    db.refresh(produto)
+
+    return produto
