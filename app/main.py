@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app import schemas
 from app.database import Base, engine, get_db
@@ -20,6 +21,19 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+def obter_produto(db: Session, produto_id: int) -> Produto:
+    stmt = select(Produto).where(Produto.id == produto_id)
+
+    produto = db.scalars(stmt).first()
+
+    if produto is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Produto não encontrado"
+        )
+
+    return produto
 
 
 @app.get("/health")
@@ -54,3 +68,29 @@ def criar_produto(
     db.refresh(produto)
 
     return produto
+
+
+@app.get(
+    "/produtos",
+    response_model=list[schemas.ProdutoOut]
+)
+def listar_produtos(
+    estoque_max: int | None = None,
+    db: Session = Depends(get_db)
+):
+    stmt = select(Produto).order_by(Produto.id)
+
+    if estoque_max is not None:
+        stmt = stmt.where(Produto.estoque <= estoque_max)
+
+    return db.scalars(stmt).all()
+
+@app.get(
+    "/produtos/{produto_id}",
+    response_model=schemas.ProdutoOut
+)
+def detalhar_produto(
+    produto_id: int,
+    db: Session = Depends(get_db)
+):
+    return obter_produto(db, produto_id)
