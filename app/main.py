@@ -194,3 +194,15 @@ def registrar_saida(
     db.refresh(produto)
 
     return produto
+
+@app.get(
+    "/produtos/{produto_id}/movimentacoes",
+    response_model=list[schemas.MovimentacaoOut]
+)
+def listar_movimentacoes(
+    produto_id: int,
+    db: Session = Depends(get_db)
+):
+    produto = obter_produto(db, produto_id)
+
+    return produto.movimentacoes
