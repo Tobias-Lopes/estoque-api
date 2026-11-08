@@ -155,3 +155,42 @@ def registrar_compra(
     db.refresh(produto)
 
     return produto
+
+@app.post(
+    "/produtos/{produto_id}/saidas",
+    response_model=schemas.ProdutoOut,
+    status_code=status.HTTP_201_CREATED
+)
+def registrar_saida(
+    produto_id: int,
+    dados: schemas.SaidaIn,
+    db: Session = Depends(get_db)
+):
+    produto = obter_produto(db, produto_id, travar=True)
+
+    if dados.quantidade > produto.estoque:
+        disponivel = produto.estoque
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Estoque insuficiente: disponível {disponivel}, "
+                f"pedido {dados.quantidade}"
+            )
+        )
+
+    produto.estoque -= dados.quantidade
+
+    movimentacao = Movimentacao(
+        produto_id=produto.id,
+        tipo="saida",
+        quantidade=dados.quantidade
+    )
+
+    db.add(movimentacao)
+
+    db.commit()
+    db.refresh(produto)
+
+    return produto
