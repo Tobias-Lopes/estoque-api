@@ -7,8 +7,8 @@ from sqlalchemy import select
 
 from app import schemas
 from app.database import Base, engine, get_db
-from app.models import Produto
-
+from app.models import Movimentacao, Produto
+from app.pricing import custo_medio_ponderado
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -22,8 +22,16 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-def obter_produto(db: Session, produto_id: int) -> Produto:
+def obter_produto(
+    db: Session,
+    produto_id: int,
+    *,
+    travar: bool = False
+) -> Produto:
     stmt = select(Produto).where(Produto.id == produto_id)
+
+    if travar:
+        stmt = stmt.with_for_update()
 
     produto = db.scalars(stmt).first()
 
@@ -107,6 +115,41 @@ def atualizar_margem(
     produto = obter_produto(db, produto_id)
 
     produto.margem_percentual = dados.margem_percentual
+
+    db.commit()
+    db.refresh(produto)
+
+    return produto
+
+@app.post(
+    "/produtos/{produto_id}/compras",
+    response_model=schemas.ProdutoOut,
+    status_code=status.HTTP_201_CREATED
+)
+def registrar_compra(
+    produto_id: int,
+    dados: schemas.CompraIn,
+    db: Session = Depends(get_db)
+):
+    produto = obter_produto(db, produto_id, travar=True)
+
+    produto.custo_medio_centavos = custo_medio_ponderado(
+        produto.estoque,
+        produto.custo_medio_centavos,
+        dados.quantidade,
+        dados.custo_unitario_centavos
+    )
+
+    produto.estoque += dados.quantidade
+
+    movimentacao = Movimentacao(
+        produto_id=produto.id,
+        tipo="entrada",
+        quantidade=dados.quantidade,
+        custo_unitario_centavos=dados.custo_unitario_centavos
+    )
+
+    db.add(movimentacao)
 
     db.commit()
     db.refresh(produto)
